@@ -5,13 +5,20 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"github.com/joho/godotenv"
+
+	"github.com/Milinkov-N/linuzquixbot/pkg/cache"
 )
 
-var selected_quiz = "__none__"
+type UserData struct {
+	selected_quiz string
+}
+
+var USERS = cache.NewCacheWithAutoCleanup[int64](1*time.Minute, 5*time.Minute)
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -73,7 +80,9 @@ func quizHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 	switch update.CallbackQuery.Data {
 	case "test_main":
-		selected_quiz = "test_main"
+		USERS.Set(update.CallbackQuery.Message.Message.Chat.ID, UserData{
+			selected_quiz: "test_main",
+		})
 
 		kb := &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
@@ -93,7 +102,9 @@ func quizHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		})
 
 	case "test_txt_editors":
-		selected_quiz = "test_txt_editors"
+		USERS.Set(update.CallbackQuery.Message.Message.Chat.ID, UserData{
+			selected_quiz: "test_txt_editors",
+		})
 
 		kb := &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
@@ -107,7 +118,7 @@ func quizHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID:      update.CallbackQuery.Message.Message.Chat.ID,
-			Text:        "You selected the `button`: " + update.CallbackQuery.Data,
+			Text:        "You selected the button: " + update.CallbackQuery.Data,
 			ReplyMarkup: kb,
 		})
 	}
@@ -120,8 +131,21 @@ func answerHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		ShowAlert:       false,
 	})
 
+	data, exists := USERS.Get(update.CallbackQuery.Message.Message.Chat.ID)
+
+	if !exists {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: update.CallbackQuery.Message.Message.Chat.ID,
+			Text:   "Похоже время на ответ истекло. Введи команду /start и попробуй пройти тест заново",
+		})
+
+		return
+	}
+
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: update.CallbackQuery.Message.Message.Chat.ID,
-		Text:   fmt.Sprintf("Your answer for quiz %s was %s", selected_quiz, update.CallbackQuery.Data),
+		Text: fmt.Sprintf("Your answer for quiz %s was %s",
+			data.(UserData).selected_quiz,
+			update.CallbackQuery.Data),
 	})
 }
