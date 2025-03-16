@@ -1,4 +1,4 @@
-module github.com/linuzquixbot
+module github.com/Milinkov-N/linuzquixbot
 
 go 1.23.6
 
