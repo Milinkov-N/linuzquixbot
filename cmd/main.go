@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"time"
@@ -12,12 +13,15 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/Milinkov-N/linuzquixbot/pkg/cache"
+	"github.com/Milinkov-N/linuzquixbot/pkg/postgres"
+	"github.com/Milinkov-N/linuzquixbot/pkg/quiz"
 )
 
 type UserData struct {
 	selected_quiz string
 }
 
+var QUIZZES []*quiz.Quiz
 var USERS = cache.NewCacheWithAutoCleanup[int64](1*time.Minute, 5*time.Minute)
 
 func main() {
@@ -26,16 +30,44 @@ func main() {
 
 	err := godotenv.Load()
 	if err != nil {
-		println("failed to load .env file.", err.Error())
+		log.Println("failed to load .env file.", err.Error())
 		return
 	}
 
 	TG_API_TOKEN := os.Getenv("TG_API_TOKEN")
 
+	db, err := postgres.New("postgres", "postgres")
+	if err != nil {
+		log.Fatal(err.Error())
+		return
+	}
+
+	repo := quiz.NewRepo(db)
+	quiz, err := repo.GetQuiz(1)
+	if err != nil {
+		log.Panic(err.Error())
+	}
+
+	err = repo.FetchQestions(quiz)
+	if err != nil {
+		log.Panic(err.Error())
+	}
+
+	for i := range quiz.Questions {
+		err := repo.FetchAnswers(&quiz.Questions[i])
+		if err != nil {
+			log.Panic(err.Error())
+		}
+	}
+
+	fmt.Println(quiz)
+
+	QUIZZES = append(QUIZZES, quiz)
+
 	opts := []bot.Option{
 		bot.WithDefaultHandler(defHandler),
-		bot.WithCallbackQueryDataHandler("test", bot.MatchTypePrefix, quizHandler),
-		bot.WithCallbackQueryDataHandler("answer", bot.MatchTypePrefix, answerHandler),
+		bot.WithCallbackQueryDataHandler("test:", bot.MatchTypePrefix, quizHandler),
+		bot.WithCallbackQueryDataHandler("answer:", bot.MatchTypePrefix, answerHandler),
 	}
 
 	b, err := bot.New(TG_API_TOKEN, opts...)
@@ -49,13 +81,12 @@ func main() {
 }
 
 func startHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
-	kb := &models.InlineKeyboardMarkup{
-		InlineKeyboard: [][]models.InlineKeyboardButton{
-			{
-				{Text: "Общий тест по Linux", CallbackData: "test_main"},
-				{Text: "Текстовые редакторы Linux", CallbackData: "test_txt_editors"},
-			},
-		},
+	kb := &models.InlineKeyboardMarkup{}
+
+	for _, quiz := range QUIZZES {
+		kb.InlineKeyboard = append(kb.InlineKeyboard, []models.InlineKeyboardButton{
+			{Text: quiz.Name, CallbackData: quiz.CallbackData},
+		})
 	}
 
 	b.SendMessage(ctx, &bot.SendMessageParams{
@@ -78,21 +109,20 @@ func quizHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 		ShowAlert:       false,
 	})
 
+	// FIX: QUIZZES should be a map to callback_data
+	// so  this hardcode can be eliminated
 	switch update.CallbackQuery.Data {
-	case "test_main":
+	case "test:linux_main":
 		USERS.Set(update.CallbackQuery.Message.Message.Chat.ID, UserData{
-			selected_quiz: "test_main",
+			selected_quiz: "test:linux_main",
 		})
 
-		kb := &models.InlineKeyboardMarkup{
-			InlineKeyboard: [][]models.InlineKeyboardButton{
-				{
-					{Text: "Ответ 1", CallbackData: "answer_1"},
-					{Text: "Ответ 2", CallbackData: "answer_2"},
-					{Text: "Ответ 3", CallbackData: "answer_3"},
-					{Text: "Ответ 4", CallbackData: "answer_4"},
-				},
-			},
+		kb := &models.InlineKeyboardMarkup{}
+
+		for _, answer := range QUIZZES[0].Questions[0].Answers {
+			kb.InlineKeyboard = append(kb.InlineKeyboard, []models.InlineKeyboardButton{
+				{Text: answer.Text, CallbackData: fmt.Sprintf("answer:%d", answer.Id)},
+			})
 		}
 
 		b.SendMessage(ctx, &bot.SendMessageParams{
@@ -101,17 +131,17 @@ func quizHandler(ctx context.Context, b *bot.Bot, update *models.Update) {
 			ReplyMarkup: kb,
 		})
 
-	case "test_txt_editors":
+	case "test:txt_editors":
 		USERS.Set(update.CallbackQuery.Message.Message.Chat.ID, UserData{
-			selected_quiz: "test_txt_editors",
+			selected_quiz: "test:txt_editors",
 		})
 
 		kb := &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					{Text: "Ответ 1", CallbackData: "answer_1"},
-					{Text: "Ответ 2", CallbackData: "answer_2"},
-					{Text: "Ответ 3", CallbackData: "answer_3"},
+					{Text: "Ответ 1", CallbackData: "answer:1"},
+					{Text: "Ответ 2", CallbackData: "answer:2"},
+					{Text: "Ответ 3", CallbackData: "answer:3"},
 				},
 			},
 		}
