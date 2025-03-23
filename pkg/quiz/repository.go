@@ -2,8 +2,8 @@ package quiz
 
 import (
 	"log"
-	"os"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -16,44 +16,86 @@ func NewRepo(db *sqlx.DB) QuizRepo {
 }
 
 func (r *QuizRepo) GetQuiz(id uint64) (*Quiz, error) {
-	sql, err := os.ReadFile("sql/queries/00-select_all_quiz_data_by_id.sql")
-	if err != nil {
-		// bot cannot function properly if it can't query the db, hence the panic()
-		panic(err.Error())
-	}
+	sql, _, err := sq.Select("id, \"name\", callback_data").
+		From("quiz").
+		Where("id = $1").
+		ToSql()
 
-	stmt, err := r.db.Preparex(string(sql))
 	if err != nil {
 		return nil, err
 	}
 
-	defer stmt.Close()
+	log.Println(sql)
 
-	quizData := []QuizRawData{}
-	err = stmt.Select(&quizData, 1)
+	quizData := QuizRaw{}
+	err = r.db.Get(&quizData, sql, 1)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, v := range quizData {
-		log.Println(v)
+	log.Println(quizData)
+
+	return quizData.ToQuiz(), nil
+}
+
+func (r *QuizRepo) FetchQestions(quiz *Quiz) error {
+	sql, _, err := sq.Select("id, \"text\"").
+		From("question").
+		Where("quiz_id = $1").
+		ToSql()
+
+	if err != nil {
+		return err
 	}
 
-	return &Quiz{
-		Id:   quizData[0].QuizId,
-		Name: quizData[0].QuizName,
-		Questions: []Question{
-			{
-				Id:   quizData[0].QuestionId,
-				Text: quizData[0].QuestionText,
-				Answers: []Answer{
-					{
-						Id:      quizData[0].AnswerId,
-						Text:    quizData[0].AnswerText,
-						IsRight: quizData[0].AnswerIsRight,
-					},
-				},
-			},
-		},
-	}, nil
+	log.Println(sql)
+
+	questions := []QuestionRaw{}
+	stmt, err := r.db.Preparex(sql)
+	if err != nil {
+		return err
+	}
+
+	err = stmt.Select(&questions, quiz.Id)
+	if err != nil {
+		return err
+	}
+
+	log.Println(questions)
+
+	for _, q := range questions {
+		quiz.Questions = append(quiz.Questions, *q.ToQuestion())
+	}
+
+	return nil
+}
+
+func (r *QuizRepo) FetchAnswers(question *Question) error {
+	sql, _, err := sq.Select("id, \"text\", is_right").
+		From("answer").
+		Where("question_id = $1").
+		ToSql()
+
+	if err != nil {
+		return err
+	}
+
+	log.Println(sql)
+
+	answers := []Answer{}
+	stmt, err := r.db.Preparex(sql)
+	if err != nil {
+		return err
+	}
+
+	err = stmt.Select(&answers, question.Id)
+	if err != nil {
+		return err
+	}
+
+	log.Println(answers)
+
+	question.Answers = answers
+
+	return nil
 }

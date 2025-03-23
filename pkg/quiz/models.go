@@ -1,19 +1,10 @@
 package quiz
 
-type QuizRawData struct {
-	QuizId        uint64 `db:"quiz_id"`
-	QuizName      string `db:"quiz_name"`
-	QuestionId    uint64 `db:"question_id"`
-	QuestionText  string `db:"question_text"`
-	AnswerId      uint64 `db:"answer_id"`
-	AnswerText    string `db:"answer_text"`
-	AnswerIsRight bool   `db:"answer_is_right"`
-}
-
 type Quiz struct {
-	Id        uint64
-	Name      string
-	Questions []Question
+	Id           uint64
+	Name         string
+	CallbackData string
+	Questions    []Question
 }
 
 type Question struct {
@@ -23,7 +14,35 @@ type Question struct {
 }
 
 type Answer struct {
-	Id      uint64
-	Text    string
-	IsRight bool
+	Id      uint64 `db:"id"`
+	Text    string `db:"text"`
+	IsRight bool   `db:"is_right"`
+}
+
+type QuizRaw struct {
+	Id           uint64 `db:"id"`
+	Name         string `db:"name"`
+	CallbackData string `db:"callback_data"`
+}
+
+func (qr *QuizRaw) ToQuiz() *Quiz {
+	return &Quiz{
+		Id:           qr.Id,
+		Name:         qr.Name,
+		CallbackData: qr.CallbackData,
+		Questions:    []Question{},
+	}
+}
+
+type QuestionRaw struct {
+	Id   uint64 `db:"id"`
+	Text string `db:"text"`
+}
+
+func (qr *QuestionRaw) ToQuestion() *Question {
+	return &Question{
+		Id:      qr.Id,
+		Text:    qr.Text,
+		Answers: []Answer{},
+	}
 }
